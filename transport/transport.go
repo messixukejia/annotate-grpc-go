@@ -530,7 +530,7 @@ func connectionErrorf(temp bool, e error, format string, a ...interface{}) Conne
 // entire connection and the retry of all the active streams.
 type ConnectionError struct {
 	Desc string
-	temp bool
+	temp bool //表示这个错误是不是临时的（如果是临时的，连接的时候会重试）
 	err  error
 }
 

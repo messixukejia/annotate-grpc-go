@@ -246,6 +246,7 @@ func (rr *roundRobin) Start(target string, config BalancerConfig) error {
 
 // Up sets the connected state of addr and sends notification if there are pending
 // Get() calls.
+//通知有一个地址ok了
 func (rr *roundRobin) Up(addr Address) func(error) {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
@@ -270,7 +271,7 @@ func (rr *roundRobin) Up(addr Address) func(error) {
 		rr.down(addr, err)
 	}
 }
-
+//当这个地址不ok的时候去掉
 // down unsets the connected state of addr.
 func (rr *roundRobin) down(addr Address, err error) {
 	rr.mu.Lock()

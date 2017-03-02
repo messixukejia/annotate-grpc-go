@@ -92,7 +92,7 @@ type dialOptions struct {
 	cp        Compressor
 	dc        Decompressor
 	bs        backoffStrategy
-	balancer  Balancer
+	balancer  Balancer //负载均衡，自带的RoundRobin就会返回一个轮训策略的对象
 	block     bool
 	insecure  bool
 	timeout   time.Duration
@@ -287,19 +287,21 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		target: target,
 		conns:  make(map[Address]*addrConn),
 	}
+	//这里设置取消的context，可以调用cc.cancel 主动中断dial
 	cc.ctx, cc.cancel = context.WithCancel(context.Background())
 	for _, opt := range opts {
-		opt(&cc.dopts)
+		opt(&cc.dopts)//初始化所有参数
 	}
-	if cc.dopts.timeout > 0 {
+	if cc.dopts.timeout > 0 {//这个值可以通过 WithTimeout 设置；
 		var cancel context.CancelFunc
+		//这个方法里面会 在timeout 时间之后，close chan，这样Done() 就可以读了
 		ctx, cancel = context.WithTimeout(ctx, cc.dopts.timeout)
-		defer cancel()
+		defer cancel() //这一步是必须的，用来释放资源，里面调用了ctx.cancel,关闭了chan（Done()会返回的那个），
 	}
 
 	defer func() {
 		select {
-		case <-ctx.Done():
+		case <-ctx.Done()://收到这个表示 前面WithTimeout设置了超时 并且ctx过期了
 			conn, err = nil, ctx.Err()
 		default:
 		}
@@ -308,7 +310,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 			cc.Close()
 		}
 	}()
-
+	//通过WithServiceConfig 设置， 可以异步的 设置service config
 	if cc.dopts.scChan != nil {
 		// Wait for the initial service config.
 		select {
@@ -316,16 +318,16 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 			if ok {
 				cc.sc = sc
 			}
-		case <-ctx.Done():
+		case <-ctx.Done(): //同上
 			return nil, ctx.Err()
 		}
 	}
 	// Set defaults.
 	if cc.dopts.codec == nil {
-		cc.dopts.codec = protoCodec{}
+		cc.dopts.codec = protoCodec{}//默认编码
 	}
 	if cc.dopts.bs == nil {
-		cc.dopts.bs = DefaultBackoffConfig
+		cc.dopts.bs = DefaultBackoffConfig //默认的backoff重试策略,
 	}
 	creds := cc.dopts.copts.TransportCredentials
 	if creds != nil && creds.Info().ServerName != "" {
@@ -341,13 +343,17 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 	}
 	var ok bool
 	waitC := make(chan error, 1)
+	//单独goroutine执行，里面有错误会写到waitC 里， 用来获取集群服务的所有地址，并建立连接
 	go func() {
 		var addrs []Address
+		//负载均衡的配置
+		//cc.dopts.balancer和cc.sc.LB都是Balancer接口，分别通过WithBalancer 和 通过WithServiceConfig 设置，前者会覆盖后者
 		if cc.dopts.balancer == nil && cc.sc.LB != nil {
 			cc.dopts.balancer = cc.sc.LB
 		}
 		if cc.dopts.balancer == nil {
 			// Connect to target directly if balancer is nil.
+			//如果没有设置balancer，地址列表里面就只有target这一个地址
 			addrs = append(addrs, Address{Addr: target})
 		} else {
 			var credsClone credentials.TransportCredentials
@@ -357,34 +363,37 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 			config := BalancerConfig{
 				DialCreds: credsClone,
 			}
+			//balancer(etcd等)的初始化
 			if err := cc.dopts.balancer.Start(target, config); err != nil {
 				waitC <- err
 				return
 			}
+			//这里会 返回一个chan，元素是每一次地址更新后的所有地址（是全量，不是增量）
 			ch := cc.dopts.balancer.Notify()
 			if ch == nil {
 				// There is no name resolver installed.
 				addrs = append(addrs, Address{Addr: target})
 			} else {
-				addrs, ok = <-ch
+				addrs, ok = <-ch//ok 表示chan是否关闭，如果关闭了就不需要lbWatcher了（监控地址改动）
 				if !ok || len(addrs) == 0 {
-					waitC <- errNoAddr
+					waitC <- errNoAddr //没有从balance找到有效的地址
 					return
 				}
 			}
 		}
+		//对于每一个地址 建立连接; 如果调用了WithBlock，则这一步是阻塞的，一直等到所有连接成功（注：建议不要这样，除非你知道你在干什么）
 		for _, a := range addrs {
 			if err := cc.resetAddrConn(a, false, nil); err != nil {
 				waitC <- err
 				return
 			}
 		}
-		close(waitC)
+		close(waitC) //关闭waitC，这样会读取到err=nil
 	}()
 	select {
-	case <-ctx.Done():
+	case <-ctx.Done()://同上
 		return nil, ctx.Err()
-	case err := <-waitC:
+	case err := <-waitC://这一步会等待上一个goroutine结束
 		if err != nil {
 			return nil, err
 		}
@@ -392,12 +401,12 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 
 	// If balancer is nil or balancer.Notify() is nil, ok will be false here.
 	// The lbWatcher goroutine will not be created.
-	if ok {
+	if ok {//只有采用balancer（etcd等）的才会走到这一步，监控服务集群地址的变化
 		go cc.lbWatcher()
 	}
 
 	if cc.dopts.scChan != nil {
-		go cc.scWatcher()
+		go cc.scWatcher()//监控ServiceConfig的变化，这样可以在dial之后动态的修改client的访问服务的配置ServiceConfig
 	}
 	return cc, nil
 }
@@ -437,28 +446,29 @@ func (s ConnectivityState) String() string {
 
 // ClientConn represents a client connection to an RPC server.
 type ClientConn struct {
-	ctx    context.Context
-	cancel context.CancelFunc
+	ctx    context.Context//context.WithCancel dial的时候是这个，
+	cancel context.CancelFunc// 上面的context.WithCancel 返回的，可以主动调用cancel，断开dial
 
-	target    string
+	target    string //若果在没有负载均衡的情况下，这个就是服务器的地址（ip:port）; 有负载均衡的情况下是etcd等的key（通过这个key）
 	authority string
-	dopts     dialOptions
+	dopts     dialOptions //建立连接的各项配置
 
 	mu    sync.RWMutex
 	sc    ServiceConfig
-	conns map[Address]*addrConn
+	conns map[Address]*addrConn// 维护各个地址对应的连接，每一个addrConn 维护一个长连接
 }
 
 func (cc *ClientConn) lbWatcher() {
+	//Notify 返回的是一个chan，元素是每一次地址更新后的所有地址（是全量，不是增量）
 	for addrs := range cc.dopts.balancer.Notify() {
 		var (
 			add []Address   // Addresses need to setup connections.
 			del []*addrConn // Connections need to tear down.
 		)
-		cc.mu.Lock()
+		cc.mu.Lock()//地址存在cc.conns，操作需要加锁
 		for _, a := range addrs {
 			if _, ok := cc.conns[a]; !ok {
-				add = append(add, a)
+				add = append(add, a)//新增的服务地址（可以认为集群新增了机器/服务）
 			}
 		}
 		for k, c := range cc.conns {
@@ -470,16 +480,16 @@ func (cc *ClientConn) lbWatcher() {
 				}
 			}
 			if !keep {
-				del = append(del, c)
+				del = append(del, c)//删除的地址（可以认为这个地址从blancer中去掉了里面删了的服务挂了，所以要踢出去）
 				delete(cc.conns, c.addr)
 			}
 		}
 		cc.mu.Unlock()
 		for _, a := range add {
-			cc.resetAddrConn(a, true, nil)
+			cc.resetAddrConn(a, true, nil)//新增的地址建立连接
 		}
 		for _, c := range del {
-			c.tearDown(errConnDrain)
+			c.tearDown(errConnDrain)//关闭这个地址的连接
 		}
 	}
 }
@@ -536,10 +546,13 @@ func (cc *ClientConn) resetAddrConn(addr Address, skipWait bool, tearDownErr err
 		cc.mu.Unlock()
 		return ErrClientConnClosing
 	}
-	stale := cc.conns[ac.addr]
-	cc.conns[ac.addr] = ac
+	stale := cc.conns[ac.addr] //获取旧的addrConn，可能没有，就是nil
+	cc.conns[ac.addr] = ac //用新的addrConn 替换
 	cc.mu.Unlock()
 	if stale != nil {
+		//已经存在一个旧的addrConn，需要关闭，有两种可能
+		//1. balancer(etcd等) 存在bug，返回了重复的地址~~O(∩_∩)O哈哈~完美甩锅
+		//2. 收到http2 的goaway（表示服务端不接受新的请求了，但是已有的请求要继续处理完），这里又新建一个,????
 		// There is an addrConn alive on ac.addr already. This could be due to
 		// 1) a buggy Balancer notifies duplicated Addresses;
 		// 2) goaway was received, a new ac will replace the old ac.
@@ -555,6 +568,7 @@ func (cc *ClientConn) resetAddrConn(addr Address, skipWait bool, tearDownErr err
 			stale.tearDown(tearDownErr)
 		}
 	}
+	//通过WithBlock设置为true后，这里会阻塞，直到所有连接成功；
 	// skipWait may overwrite the decision in ac.dopts.block.
 	if ac.dopts.block && !skipWait {
 		if err := ac.resetTransport(false); err != nil {
@@ -572,7 +586,7 @@ func (cc *ClientConn) resetAddrConn(addr Address, skipWait bool, tearDownErr err
 		}
 		// Start to monitor the error status of transport.
 		go ac.transportMonitor()
-	} else {
+	} else {//这里不会阻塞，异步的建立连接
 		// Start a goroutine connecting to the server asynchronously.
 		go func() {
 			if err := ac.resetTransport(false); err != nil {
@@ -746,30 +760,38 @@ func (ac *addrConn) waitForStateChange(ctx context.Context, sourceState Connecti
 }
 
 func (ac *addrConn) resetTransport(closeTransport bool) error {
-	for retries := 0; ; retries++ {
+	for retries := 0; ; retries++ { //一直循重试建立连接直到成功，除非某些条件下返回
 		ac.mu.Lock()
 		ac.printf("connecting")
 		if ac.state == Shutdown {
+			//Shutdown状态表示这个连接已经关闭，不需要维护了，通常服务先挂了，然后balancer(etcd等)中这个地址又被移除了的情况会走到这，直接返回
 			// ac.tearDown(...) has been invoked.
 			ac.mu.Unlock()
 			return errConnClosing
 		}
 		if ac.down != nil {
+			//一般通过存balancer（etcd等）的UP 方法返回的，
+			// 如果存在，这里就通知balancer 这个地址连接不ok了，不要用了，其实是因为接下里要reset，O(∩_∩)O哈哈~
 			ac.down(downErrorf(false, true, "%v", errNetworkIO))
 			ac.down = nil
 		}
-		ac.state = Connecting
-		ac.stateCV.Broadcast()
+		ac.state = Connecting //状态改为正在连接中~~
+		ac.stateCV.Broadcast()//lzy todo
 		t := ac.transport
 		ac.mu.Unlock()
-		if closeTransport && t != nil {
+		if closeTransport && t != nil { //旧的要关闭
 			t.Close()
 		}
+		//这里是根据重试的超时策略，返回两次重试的间隔时间；即如果这次重连还是失败，会等待sleepTime才会进入下一次循环
+		//retries越大，sleepTime越大
 		sleepTime := ac.dopts.bs.backoff(retries)
 		timeout := minConnectTimeout
 		if timeout < sleepTime {
 			timeout = sleepTime
 		}
+		//设置超时时间，最小20s
+		//注：为啥下面err==nil的时候cancel没有执行（官方推荐的是立马defer cancel()） bug？？？？？
+		//已经提了个issue https://github.com/grpc/grpc-go/issues/1099
 		ctx, cancel := context.WithTimeout(ac.ctx, timeout)
 		connectTime := time.Now()
 		sinfo := transport.TargetInfo{
@@ -779,48 +801,49 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 		newTransport, err := transport.NewClientTransport(ctx, sinfo, ac.dopts.copts)
 		if err != nil {
 			cancel()
-
+			//如果不是临时错误，立马返回；否则接下里会重试
 			if e, ok := err.(transport.ConnectionError); ok && !e.Temporary() {
 				return err
 			}
 			grpclog.Printf("grpc: addrConn.resetTransport failed to create client transport: %v; Reconnecting to %v", err, ac.addr)
 			ac.mu.Lock()
-			if ac.state == Shutdown {
+			if ac.state == Shutdown {//同上，即这个地址不需要了
 				// ac.tearDown(...) has been invoked.
 				ac.mu.Unlock()
 				return errConnClosing
 			}
 			ac.errorf("transient failure: %v", err)
-			ac.state = TransientFailure
+			ac.state = TransientFailure //状态改为短暂的失败
 			ac.stateCV.Broadcast()
 			if ac.ready != nil {
-				close(ac.ready)
+				close(ac.ready) //建立连接失败了 关闭ready
 				ac.ready = nil
 			}
 			ac.mu.Unlock()
 			closeTransport = false
 			select {
-			case <-time.After(sleepTime - time.Since(connectTime)):
-			case <-ac.ctx.Done():
+			case <-time.After(sleepTime - time.Since(connectTime))://一直等待足够sleepTime长时间，再进入下一次循环
+			case <-ac.ctx.Done()://这个连接是被cancel掉（超时或者主动cancel）
 				return ac.ctx.Err()
 			}
 			continue
 		}
 		ac.mu.Lock()
 		ac.printf("ready")
-		if ac.state == Shutdown {
+		if ac.state == Shutdown {//同上
 			// ac.tearDown(...) has been invoked.
 			ac.mu.Unlock()
 			newTransport.Close()
 			return errConnClosing
 		}
-		ac.state = Ready
+		ac.state = Ready //状态ok了
 		ac.stateCV.Broadcast()
 		ac.transport = newTransport
 		if ac.ready != nil {
-			close(ac.ready)
+			close(ac.ready) //建立连接成功了关闭ready
 			ac.ready = nil
 		}
+		//如果存在balancer（etcd等）就通知balancer 这个地址连接ok了，可以用了
 		if ac.cc.dopts.balancer != nil {
 			ac.down = ac.cc.dopts.balancer.Up(ac.addr)
 		}

@@ -120,7 +120,9 @@ func dial(ctx context.Context, fn func(context.Context, string) (net.Conn, error
 	}
 	return dialContext(ctx, "tcp", addr)
 }
-
+//以下情况err会当做连接临时错误：
+//1. io.EOF 和超时 DeadlineExceeded
+//2. 如果这个err实现了Temporary,由Temporary决定； 如果实现了Timeout 由Timeout 决定
 func isTemporary(err error) bool {
 	switch err {
 	case io.EOF:
@@ -156,9 +158,12 @@ func newHTTP2Client(ctx context.Context, addr TargetInfo, opts ConnectOptions) (
 	scheme := "http"
 	conn, err := dial(ctx, opts.Dialer, addr.Addr)
 	if err != nil {
+		//这个值通过FailOnNonTempDialError来设置，如果为true，则所有的连接临时错误会重试，非连接临时错误会立马fail
+		//一个错误是否是连接临时错误由isTemporary决定（eof和超时就属于这个情况）
 		if opts.FailOnNonTempDialError {
 			return nil, connectionErrorf(isTemporary(err), err, "transport: %v", err)
 		}
+		//默认情况下所有error都当做临时错误，也就是会循环重连； 感觉这样不太好~~，浪费资源~~
 		return nil, connectionErrorf(true, err, "transport: %v", err)
 	}
 	// Any further errors will close the underlying connection
