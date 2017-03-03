@@ -19,4 +19,9 @@ git fetch --all
 git checkout -b note lzy/note
 ```
 建议阅读顺序
-1. grpc.Dial()
+
+* grpc.Dial()
+* (cc *ClientConn) resetAddrConn
+* (ac *addrConn) resetTransport
+* (ac *addrConn) transportMonitor //单独的goroutine，管理transport
+* transport.newHTTP2Client

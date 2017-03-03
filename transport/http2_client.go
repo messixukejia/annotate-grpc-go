@@ -232,7 +232,7 @@ func newHTTP2Client(ctx context.Context, addr TargetInfo, opts ConnectOptions) (
 	// dispatches the frame to the corresponding stream entity.
 	go t.reader()
 	// Send connection preface to server.
-	n, err := t.conn.Write(clientPreface)
+	n, err := t.conn.Write(clientPreface)//开始建立http2 连接
 	if err != nil {
 		t.Close()
 		return nil, connectionErrorf(true, err, "transport: %v", err)
@@ -241,6 +241,7 @@ func newHTTP2Client(ctx context.Context, addr TargetInfo, opts ConnectOptions) (
 		t.Close()
 		return nil, connectionErrorf(true, err, "transport: preface mismatch, wrote %d bytes; want %d", n, len(clientPreface))
 	}
+	//发送setting帧
 	if initialWindowSize != defaultWindowSize {
 		err = t.framer.writeSettings(true, http2.Setting{
 			ID:  http2.SettingInitialWindowSize,
@@ -261,7 +262,7 @@ func newHTTP2Client(ctx context.Context, addr TargetInfo, opts ConnectOptions) (
 		}
 	}
 	go t.controller()
-	t.writableChan <- 0
+	t.writableChan <- 0 //到这一步才能写帧消息（读到writableChan即可）
 	return t, nil
 }
 
@@ -974,6 +975,8 @@ func handleMalformedHTTP2(s *Stream, err error) {
 	s.write(recvMsg{err: err})
 }
 
+// 一个reader只维护一个连接即 一个addrConn 只维护一个连接；可能这种方式没有充分利用系统资源~~；
+// 作者也表示'调查这个方式是否是最优的'
 // reader runs as a separate goroutine in charge of reading data from network
 // connection.
 //
@@ -981,6 +984,7 @@ func handleMalformedHTTP2(s *Stream, err error) {
 // optimal.
 // TODO(zhaoq): Check the validity of the incoming frame sequence.
 func (t *http2Client) reader() {
+	//首先处理SETTINGS帧
 	// Check the validity of server preface.
 	frame, err := t.framer.readFrame()
 	if err != nil {
@@ -993,7 +997,7 @@ func (t *http2Client) reader() {
 		return
 	}
 	t.handleSettings(sf)
-
+	//然后读取所有帧
 	// loop to keep reading incoming messages on this transport.
 	for {
 		frame, err := t.framer.readFrame()
@@ -1012,7 +1016,7 @@ func (t *http2Client) reader() {
 				continue
 			} else {
 				// Transport error.
-				t.notifyError(err)
+				t.notifyError(err) // 这样的话，t.Error() 就会收到消息，ac.transportMonitor会处理
 				return
 			}
 		}

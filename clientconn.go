@@ -552,7 +552,7 @@ func (cc *ClientConn) resetAddrConn(addr Address, skipWait bool, tearDownErr err
 	if stale != nil {
 		//已经存在一个旧的addrConn，需要关闭，有两种可能
 		//1. balancer(etcd等) 存在bug，返回了重复的地址~~O(∩_∩)O哈哈~完美甩锅
-		//2. 收到http2 的goaway（表示服务端不接受新的请求了，但是已有的请求要继续处理完），这里又新建一个,????
+		//2. 旧的ac收到http2 的goaway（表示服务端不接受新的请求了，但是已有的请求要继续处理完），这里又新建一个，？~在transportMonitor里
 		// There is an addrConn alive on ac.addr already. This could be due to
 		// 1) a buggy Balancer notifies duplicated Addresses;
 		// 2) goaway was received, a new ac will replace the old ac.
@@ -572,12 +572,12 @@ func (cc *ClientConn) resetAddrConn(addr Address, skipWait bool, tearDownErr err
 	// skipWait may overwrite the decision in ac.dopts.block.
 	if ac.dopts.block && !skipWait {
 		if err := ac.resetTransport(false); err != nil {
-			if err != errConnClosing {
+			if err != errConnClosing { //如果有错 且不是errConnClosing(表示已经关闭)
 				// Tear down ac and delete it from cc.conns.
 				cc.mu.Lock()
-				delete(cc.conns, ac.addr)
+				delete(cc.conns, ac.addr) //从cc.conns 删除，不在维护
 				cc.mu.Unlock()
-				ac.tearDown(err)
+				ac.tearDown(err)// 关闭
 			}
 			if e, ok := err.(transport.ConnectionError); ok && !e.Temporary() {
 				return e.Origin()
@@ -593,7 +593,7 @@ func (cc *ClientConn) resetAddrConn(addr Address, skipWait bool, tearDownErr err
 				grpclog.Printf("Failed to dial %s: %v; please retry.", ac.addr.Addr, err)
 				if err != errConnClosing {
 					// Keep this ac in cc.conns, to get the reason it's torn down.
-					ac.tearDown(err)
+					ac.tearDown(err) //关闭，（和上面相比）但是不从cc.conns 删除，为了方便得到tearDownErr reason
 				}
 				return
 			}
@@ -830,7 +830,7 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 		}
 		ac.mu.Lock()
 		ac.printf("ready")
-		if ac.state == Shutdown {//同上
+		if ac.state == Shutdown {//同上，所以这个时候要把已经建立的连接close，手动从etcd中删除这个地址会走到这
 			// ac.tearDown(...) has been invoked.
 			ac.mu.Unlock()
 			newTransport.Close()
@@ -862,14 +862,14 @@ func (ac *addrConn) transportMonitor() {
 		select {
 		// This is needed to detect the teardown when
 		// the addrConn is idle (i.e., no RPC in flight).
-		case <-ac.ctx.Done():
+		case <-ac.ctx.Done(): //这一步 表示ac.teardown 了，不需要维护了，return掉
 			select {
 			case <-t.Error():
 				t.Close()
 			default:
 			}
 			return
-		case <-t.GoAway():
+		case <-t.GoAway():// 这一步，会resetAddrConn，里面会新建一个transportMonitor，这里就不需要维护了，retrrn掉
 			// If GoAway happens without any network I/O error, ac is closed without shutting down the
 			// underlying transport (the transport will be closed when all the pending RPCs finished or
 			// failed.).
@@ -883,23 +883,23 @@ func (ac *addrConn) transportMonitor() {
 				ac.cc.resetAddrConn(ac.addr, true, errConnDrain)
 			}
 			return
-		case <-t.Error():
+		case <-t.Error()://这里是transport 有错，
 			select {
-			case <-ac.ctx.Done():
+			case <-ac.ctx.Done()://这一步 表示ac.teardown（比如ctx 被cancel的情况）不需要维护了，return掉
 				t.Close()
 				return
-			case <-t.GoAway():
+			case <-t.GoAway()://同上
 				ac.cc.resetAddrConn(ac.addr, true, errNetworkIO)
 				return
-			default:
+			default: //如果有错，走到这里~~没有return， 下面会重连
 			}
 			ac.mu.Lock()
-			if ac.state == Shutdown {
+			if ac.state == Shutdown { //不是通过ac.teardown的（这种情况会走到上面），但是还Shutdown的了，什么情况呢？？？
 				// ac has been shutdown.
 				ac.mu.Unlock()
 				return
 			}
-			ac.state = TransientFailure
+			ac.state = TransientFailure //置为临时失败，暂时不让用
 			ac.stateCV.Broadcast()
 			ac.mu.Unlock()
 			if err := ac.resetTransport(true); err != nil {
@@ -963,11 +963,11 @@ func (ac *addrConn) wait(ctx context.Context, hasBalancer, failfast bool) (trans
 // tight loop.
 // tearDown doesn't remove ac from ac.cc.conns.
 func (ac *addrConn) tearDown(err error) {
-	ac.cancel()
+	ac.cancel() //执行这个之后ac.ctx.Done() 会收到消息
 
 	ac.mu.Lock()
 	defer ac.mu.Unlock()
-	if ac.down != nil {
+	if ac.down != nil {//通知balancer 这个地址 down了
 		ac.down(downErrorf(false, false, "%v", err))
 		ac.down = nil
 	}
