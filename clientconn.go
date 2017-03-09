@@ -617,7 +617,7 @@ func (cc *ClientConn) getTransport(ctx context.Context, opts BalancerGetOptions)
 		ok  bool
 		put func()
 	)
-	if cc.dopts.balancer == nil {
+	if cc.dopts.balancer == nil { //如果没有设置balancer，只会有一个地址，直接返回
 		// If balancer is nil, there should be only one addrConn available.
 		cc.mu.RLock()
 		if cc.conns == nil {
@@ -630,12 +630,13 @@ func (cc *ClientConn) getTransport(ctx context.Context, opts BalancerGetOptions)
 			break
 		}
 		cc.mu.RUnlock()
-	} else {
+	} else {//如果有设置balancer（etcd等），根据策略选一个（默认是轮询）
 		var (
 			addr Address
 			err  error
 		)
-		addr, put, err = cc.dopts.balancer.Get(ctx, opts)
+		//得到一个地址，如果!BlockingWait即failfast（默认），不保证这个地址一定是有效的；反之，则能保证
+		addr, put, err = cc.dopts.balancer.Get(ctx, opts)//(rr *roundRobin) Get
 		if err != nil {
 			return nil, nil, toRPCErr(err)
 		}
@@ -647,12 +648,13 @@ func (cc *ClientConn) getTransport(ctx context.Context, opts BalancerGetOptions)
 		ac, ok = cc.conns[addr]
 		cc.mu.RUnlock()
 	}
-	if !ok {
+	if !ok { //如果这个地址不在cc.conns里，说明这个地址已经被删了(比如etcd中掉了)
 		if put != nil {
 			put()
 		}
 		return nil, nil, errConnClosing
 	}
+	//等待一个连接，默认情况下，不保证连接ok
 	t, err := ac.wait(ctx, cc.dopts.balancer != nil, !opts.BlockingWait)
 	if err != nil {
 		if put != nil {
@@ -815,7 +817,7 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 			ac.errorf("transient failure: %v", err)
 			ac.state = TransientFailure //状态改为短暂的失败
 			ac.stateCV.Broadcast()
-			if ac.ready != nil {
+			if ac.ready != nil {//只有进入ac.wait()才会走入这个逻辑，表示有一个请求正在等待这个地址的连接是成功还是失败
 				close(ac.ready) //建立连接失败了 关闭ready
 				ac.ready = nil
 			}
@@ -839,7 +841,7 @@ func (ac *addrConn) resetTransport(closeTransport bool) error {
 		ac.state = Ready //状态ok了
 		ac.stateCV.Broadcast()
 		ac.transport = newTransport
-		if ac.ready != nil {
+		if ac.ready != nil {//只有进入ac.wait()才会走入这个逻辑，表示有一个请求正在等待这个地址的连接是成功还是失败
 			close(ac.ready) //建立连接成功了关闭ready
 			ac.ready = nil
 		}
@@ -916,7 +918,9 @@ func (ac *addrConn) transportMonitor() {
 		}
 	}
 }
-
+//等待failfast默认是true）
+//默认情况下 ac.state=Shutdown，ready，TransientFailure，直接返回
+//否则，ac.state=Connecting等，则等待ready(成功或者失败),直到ctx超时
 // wait blocks until i) the new transport is up or ii) ctx is done or iii) ac is closed or
 // iv) transport is in TransientFailure and there is a balancer/failfast is true.
 func (ac *addrConn) wait(ctx context.Context, hasBalancer, failfast bool) (transport.ClientTransport, error) {
@@ -942,6 +946,7 @@ func (ac *addrConn) wait(ctx context.Context, hasBalancer, failfast bool) (trans
 				return nil, errConnUnavailable
 			}
 		}
+		//ac.state=Connecting,默认情况下，走到这里，表示正在连接~~，所以等一等~~
 		ready := ac.ready
 		if ready == nil {
 			ready = make(chan struct{})
@@ -949,9 +954,10 @@ func (ac *addrConn) wait(ctx context.Context, hasBalancer, failfast bool) (trans
 		}
 		ac.mu.Unlock()
 		select {
-		case <-ctx.Done():
+		case <-ctx.Done()://这个请求被cancel了（超时等等）
 			return nil, toRPCErr(ctx.Err())
 		// Wait until the new transport is ready or failed.
+		//不管成功还是失败，都会close(ac.ready)
 		case <-ready:
 		}
 	}

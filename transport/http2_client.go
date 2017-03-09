@@ -230,6 +230,7 @@ func newHTTP2Client(ctx context.Context, addr TargetInfo, opts ConnectOptions) (
 	// Start the reader goroutine for incoming message. Each transport has
 	// a dedicated goroutine which reads HTTP2 frame from network. Then it
 	// dispatches the frame to the corresponding stream entity.
+	//循环的读取所有的帧，并且分发到相应的流中去
 	go t.reader()
 	// Send connection preface to server.
 	n, err := t.conn.Write(clientPreface)//开始建立http2 连接
@@ -1020,6 +1021,7 @@ func (t *http2Client) reader() {
 				return
 			}
 		}
+		//接收数据并且绑定的对应的stream上去
 		switch frame := frame.(type) {
 		case *http2.MetaHeadersFrame:
 			t.operateHeaders(frame)

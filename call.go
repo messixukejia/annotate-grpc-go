@@ -141,6 +141,7 @@ func sendRequest(ctx context.Context, dopts dialOptions, compressor Compressor, 
 // Invoke is called by generated code. Also users can call Invoke directly when it
 // is really needed in their use cases.
 func Invoke(ctx context.Context, method string, args, reply interface{}, cc *ClientConn, opts ...CallOption) error {
+	//如果在dial的时候WithUnaryInterceptor  则会先调用拦截器（可以做一些传递数据，日志等等事情）
 	if cc.dopts.unaryInt != nil {
 		return cc.dopts.unaryInt(ctx, method, args, reply, cc, invoke, opts...)
 	}
@@ -148,8 +149,8 @@ func Invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 }
 
 func invoke(ctx context.Context, method string, args, reply interface{}, cc *ClientConn, opts ...CallOption) (e error) {
-	c := defaultCallInfo
-	if mc, ok := cc.getMethodConfig(method); ok {
+	c := defaultCallInfo //默认的callinfo配置
+	if mc, ok := cc.getMethodConfig(method); ok {//获取methodConfig的配置
 		c.failFast = !mc.WaitForReady
 		if mc.Timeout > 0 {
 			var cancel context.CancelFunc
@@ -158,12 +159,12 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 		}
 	}
 	for _, o := range opts {
-		if err := o.before(&c); err != nil {
+		if err := o.before(&c); err != nil { //调用之前的处理
 			return toRPCErr(err)
 		}
 	}
 	defer func() {
-		for _, o := range opts {
+		for _, o := range opts { //调用之后的处理
 			o.after(&c)
 		}
 	}()
@@ -183,9 +184,9 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 			}
 		}()
 	}
-	sh := cc.dopts.copts.StatsHandler
+	sh := cc.dopts.copts.StatsHandler//通过WithStatsHandler来设置的, 对调用前后的状态进行掌控
 	if sh != nil {
-		ctx = sh.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: method})
+		ctx = sh.TagRPC(ctx, &stats.RPCTagInfo{FullMethodName: method})//附加一些信息到ctx
 		begin := &stats.Begin{
 			Client:    true,
 			BeginTime: time.Now(),
@@ -207,7 +208,7 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 		Last:  true,
 		Delay: false,
 	}
-	for {
+	for {//进入循环
 		var (
 			err    error
 			t      transport.ClientTransport
@@ -221,13 +222,14 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 			Host:   cc.authority,
 			Method: method,
 		}
-		if cc.dopts.cp != nil {
+		if cc.dopts.cp != nil {//发送的时候的数据压缩算法
 			callHdr.SendCompress = cc.dopts.cp.Type()
 		}
 
 		gopts := BalancerGetOptions{
-			BlockingWait: !c.failFast,
+			BlockingWait: !c.failFast,// 默认failFast=true, 所以Balancer Get不到有效的地址的时候不会block
 		}
+		//获取一个连接
 		t, put, err = cc.getTransport(ctx, gopts)
 		if err != nil {
 			// TODO(zhaoq): Probably revisit the error handling.
@@ -235,7 +237,7 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 				return err
 			}
 			if err == errConnClosing || err == errConnUnavailable {
-				if c.failFast {
+				if c.failFast {//默认是true
 					return Errorf(codes.Unavailable, "%v", err)
 				}
 				continue
@@ -246,6 +248,7 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 		if c.traceInfo.tr != nil {
 			c.traceInfo.tr.LazyLog(&payload{sent: true, msg: args}, true)
 		}
+		//发送请求
 		stream, err = sendRequest(ctx, cc.dopts, cc.dopts.cp, callHdr, t, args, topts)
 		if err != nil {
 			if put != nil {
@@ -256,13 +259,14 @@ func invoke(ctx context.Context, method string, args, reply interface{}, cc *Cli
 			// i) there is a connection error; or
 			// ii) the server started to drain before this RPC was initiated.
 			if _, ok := err.(transport.ConnectionError); ok || err == transport.ErrStreamDrain {
-				if c.failFast {
+				if c.failFast {//默认是true
 					return toRPCErr(err)
 				}
 				continue
 			}
 			return toRPCErr(err)
 		}
+		//接受响应数据，里面是阻塞等待的
 		err = recvResponse(ctx, cc.dopts, t, &c, stream, reply)
 		if err != nil {
 			if put != nil {

@@ -234,7 +234,7 @@ func (rr *roundRobin) Start(target string, config BalancerConfig) error {
 	}
 	rr.w = w
 	rr.addrCh = make(chan []Address)
-	go func() {
+	go func() {//循环监听(etcd等)的watch，如果有变动，更新到rr.addrCh 里面去
 		for {
 			if err := rr.watchAddrUpdates(); err != nil {
 				return
@@ -299,7 +299,7 @@ func (rr *roundRobin) Get(ctx context.Context, opts BalancerGetOptions) (addr Ad
 			rr.next = 0
 		}
 		next := rr.next
-		for {
+		for {//循环找到下一个有效的地址，根据connected状态来判断是否有效
 			a := rr.addrs[next]
 			next = (next + 1) % len(rr.addrs)
 			if a.connected {
@@ -310,11 +310,12 @@ func (rr *roundRobin) Get(ctx context.Context, opts BalancerGetOptions) (addr Ad
 			}
 			if next == rr.next {
 				// Has iterated all the possible address but none is connected.
+				//这里已经完全走了一遍了，还是没有有效的地址，那就返回上次调用的那一个地址
 				break
 			}
 		}
 	}
-	if !opts.BlockingWait {
+	if !opts.BlockingWait {// 对于failfast=true的（BlockingWait=!failfast）默认走这个，即使这个地址不好使也立即返回
 		if len(rr.addrs) == 0 {
 			rr.mu.Unlock()
 			err = Errorf(codes.Unavailable, "there is no address available")
@@ -334,7 +335,7 @@ func (rr *roundRobin) Get(ctx context.Context, opts BalancerGetOptions) (addr Ad
 		ch = rr.waitCh
 	}
 	rr.mu.Unlock()
-	for {
+	for { //否则这里会循环，直到找到一个有效的地址
 		select {
 		case <-ctx.Done():
 			err = ctx.Err()
