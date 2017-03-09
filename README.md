@@ -1,6 +1,7 @@
 #gRPC-Go
 
 源码注解
+
 基于34384f34de585705f1a6783a158d2ec8af29f618
 
 切换到note分支
@@ -35,4 +36,14 @@ transport.newHTTP2Client
 sendRequest()
 recvResponse()
 
+```
+
+持续更新~~~~
+
+准备接下来列举几种情况说明client端遇到意外情况的代码执行流程（使用balancer）
+```
+1.正常情况
+2.调用过程中服务集群中的某个地址挂了
+3.手动去除服务集群的地址
+4.。。
 ```
