@@ -16,7 +16,7 @@ mv annotate-grpc-go grpc
 ```
 cd $GOPATH/google.golang.org/grpc
 git remote add lzy  https://github.com/liangzhiyang/annotate-grpc-go.git
-git fetch --all 
+git fetch --all
 git checkout -b note lzy/note
 ```
 建议阅读顺序(细节不列)
@@ -30,6 +30,7 @@ transport.newHTTP2Client
 ```
 
 * grpc.Invoke() //一次rpc请求的过程
+
 ```
 (cc *ClientConn) getTransport
 (ac *addrConn) wait
@@ -41,9 +42,9 @@ recvResponse()
 持续更新~~~~
 
 准备接下来列举几种情况说明client端遇到意外情况的代码执行流程（使用balancer）
+
 ```
-1.正常情况
-2.调用过程中服务集群中的某个地址挂了
-3.手动去除服务集群的地址
-4.。。
+[grpc源码注解(golang)](http://blog.csdn.net/liangzhiyang/article/details/60963025)
+[grpc的dial正常执行流程](http://blog.csdn.net/liangzhiyang/article/details/61921764)
+[grpc服务异常情况的执行流程](http://blog.csdn.net/liangzhiyang/article/details/61921843)
 ```

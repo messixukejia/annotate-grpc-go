@@ -344,6 +344,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 	var ok bool
 	waitC := make(chan error, 1)
 	//单独goroutine执行，里面有错误会写到waitC 里， 用来获取集群服务的所有地址，并建立连接
+	//虽然go出去了，但是还是要等待这个goroutine执行结束，是阻塞的
 	go func() {
 		var addrs []Address
 		//负载均衡的配置
@@ -381,7 +382,9 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 				}
 			}
 		}
-		//对于每一个地址 建立连接; 如果调用了WithBlock，则这一步是阻塞的，一直等到所有连接成功（注：建议不要这样，除非你知道你在干什么）
+		//对于每一个地址 建立连接;
+		// 如果调用了WithBlock，则这一步是阻塞的，一直等到所有连接成功（注：建议不要这样，除非你知道你在干什么）
+		// 否则里面是通过goroutine异步处理的，不会等待所有的连接成功
 		for _, a := range addrs {
 			if err := cc.resetAddrConn(a, false, nil); err != nil {
 				waitC <- err
