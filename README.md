@@ -43,8 +43,9 @@ recvResponse()
 
 准备接下来列举几种情况说明client端遇到意外情况的代码执行流程（使用balancer）
 
-```
 [grpc源码注解(golang)](http://blog.csdn.net/liangzhiyang/article/details/60963025)
+
 [grpc的dial正常执行流程](http://blog.csdn.net/liangzhiyang/article/details/61921764)
+
 [grpc服务异常情况的执行流程](http://blog.csdn.net/liangzhiyang/article/details/61921843)
-```
+
