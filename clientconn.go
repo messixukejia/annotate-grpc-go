@@ -75,8 +75,10 @@ var (
 	// errConnDrain indicates that the connection starts to be drained and does not accept any new RPCs.
 	errConnDrain = errors.New("grpc: the connection is drained")
 	// errConnClosing indicates that the connection is closing.
+	// 这个表示连接被关闭了，一般是balancer中去掉之后，被teardown了
 	errConnClosing = errors.New("grpc: the connection is closing")
 	// errConnUnavailable indicates that the connection is unavailable.
+	//这个表示连接是无效的，一般是服务有问题，但是没有从balancer中去掉，这个时候会一直重试连接
 	errConnUnavailable = errors.New("grpc: the connection is unavailable")
 	errNoAddr          = errors.New("grpc: there is no address available to dial")
 	// minimum time to give a connection to complete
@@ -657,7 +659,7 @@ func (cc *ClientConn) getTransport(ctx context.Context, opts BalancerGetOptions)
 		}
 		return nil, nil, errConnClosing
 	}
-	//等待一个连接，默认情况下，不保证连接ok
+	//等待一个连接，默认情况下，这里是保证连接ok，如果不ok会返回错误
 	t, err := ac.wait(ctx, cc.dopts.balancer != nil, !opts.BlockingWait)
 	if err != nil {
 		if put != nil {
