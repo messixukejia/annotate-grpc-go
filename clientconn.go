@@ -298,7 +298,7 @@ func DialContext(ctx context.Context, target string, opts ...DialOption) (conn *
 		var cancel context.CancelFunc
 		//这个方法里面会 在timeout 时间之后，close chan，这样Done() 就可以读了
 		ctx, cancel = context.WithTimeout(ctx, cc.dopts.timeout)
-		defer cancel() //这一步是必须的，用来释放资源，里面调用了ctx.cancel,关闭了chan（Done()会返回的那个），
+		defer cancel() //这一步是用来及时释放资源，里面调用了ctx.cancel,关闭了chan（Done()会返回的那个），
 	}
 
 	defer func() {
