@@ -129,6 +129,7 @@ type recvBufferReader struct {
 // Read reads the next len(p) bytes from last. If last is drained, it tries to
 // read additional data from recv. It blocks if there no additional data available
 // in recv. If Read returns any non-nil error, it will continue to return that error.
+//xu: 从recvBuffer中读取数据. 1)优先从last读取，可以续读。 2)last无数据，则从recv backlog中取.
 func (r *recvBufferReader) Read(p []byte) (n int, err error) {
 	if r.err != nil {
 		return 0, r.err
@@ -447,6 +448,7 @@ type ClientTransport interface {
 
 	// GracefulClose starts to tear down the transport. It stops accepting
 	// new RPCs and wait the completion of the pending RPCs.
+	// xu:优雅关闭。停止接收新的RPC，但是处理已接收的。
 	GracefulClose() error
 
 	// Write sends the data for the given stream. A nil stream indicates

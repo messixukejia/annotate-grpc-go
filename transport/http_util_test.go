@@ -40,7 +40,7 @@ import (
 )
 
 func TestTimeoutEncode(t *testing.T) {
-	for _, test := range []struct {
+	for i, test := range []struct {
 		in  string
 		out string
 	}{
@@ -59,10 +59,12 @@ func TestTimeoutEncode(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to parse duration string %s: %v", test.in, err)
 		}
+
 		out := encodeTimeout(d)
 		if out != test.out {
 			t.Fatalf("timeoutEncode(%s) = %s, want %s", test.in, out, test.out)
 		}
+		fmt.Printf("%d: in %s, d %d, out %s\n", i, test.in, d, test.out)
 	}
 }
 

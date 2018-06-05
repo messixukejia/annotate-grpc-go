@@ -69,6 +69,7 @@ type http2Client struct {
 	// writableChan synchronizes write access to the transport.
 	// A writer acquires the write lock by sending a value on writableChan
 	// and releases it by receiving from writableChan.
+	// 用于控制write串行化
 	writableChan chan int
 	// shutdownChan is closed when Close is called.
 	// Blocking operations should select on shutdownChan to avoid
@@ -734,6 +735,7 @@ func (t *http2Client) getStream(f http2.Frame) (*Stream, bool) {
 // updateWindow adjusts the inbound quota for the stream and the transport.
 // Window updates will deliver to the controller for sending when
 // the cumulative quota exceeds the corresponding threshold.
+// xu: 更新 inbound quota
 func (t *http2Client) updateWindow(s *Stream, n uint32) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
