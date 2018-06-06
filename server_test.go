@@ -52,7 +52,7 @@ func TestStopBeforeServe(t *testing.T) {
 
 	server := NewServer()
 	server.Stop()
-	err = server.Serve(lis)
+	err = server.Serve(lis)  //xu：将lis传入stop过的serve，会默认将lis关闭。
 	if err != ErrServerStopped {
 		t.Fatalf("server.Serve() error = %v, want %v", err, ErrServerStopped)
 	}

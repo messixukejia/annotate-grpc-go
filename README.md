@@ -50,3 +50,8 @@ recvResponse()
 [grpc服务异常情况的执行流程](http://blog.csdn.net/liangzhiyang/article/details/61921843)
 
 [grpc的invoke(一次请求)正常执行流程](http://blog.csdn.net/liangzhiyang/article/details/62230971)
+
+
+
+
+Golang gRPC实践：https://github.com/Jergoo/go-grpc-example

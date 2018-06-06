@@ -181,6 +181,7 @@ func WithBlock() DialOption {
 
 // WithInsecure returns a DialOption which disables transport security for this ClientConn.
 // Note that transport security is required unless WithInsecure is set.
+// xu:关闭安全检查
 func WithInsecure() DialOption {
 	return func(o *dialOptions) {
 		o.insecure = true

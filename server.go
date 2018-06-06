@@ -352,6 +352,7 @@ func (s *Server) useTransportAuthenticator(rawConn net.Conn) (net.Conn, credenti
 // Serve returns when lis.Accept fails with fatal errors.  lis will be closed when
 // this method returns.
 // Serve always returns non-nil error.
+// xu:服务侧通过监听客户端，连接处理请求，进而起协程处理消息
 func (s *Server) Serve(lis net.Listener) error {
 	s.mu.Lock()
 	s.printf("serving")
@@ -598,6 +599,7 @@ func (s *Server) sendResponse(t transport.ServerTransport, stream *transport.Str
 	return err
 }
 
+//xu：处理流程: 接收消息p.recvMsg -> 处理md.Handler -> 发送响应s.sendResponse -> 回复状态t.WriteStatus
 func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.Stream, srv *service, md *MethodDesc, trInfo *traceInfo) (err error) {
 	sh := s.opts.statsHandler
 	if sh != nil {
@@ -765,6 +767,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 	}
 }
 
+// xu: 处理流程： 建立serverStream ->
 func (s *Server) processStreamingRPC(t transport.ServerTransport, stream *transport.Stream, srv *service, sd *StreamDesc, trInfo *traceInfo) (err error) {
 	sh := s.opts.statsHandler
 	if sh != nil {
@@ -901,6 +904,11 @@ func (s *Server) handleStream(t transport.ServerTransport, stream *transport.Str
 		return
 	}
 	// Unary RPC or Streaming RPC?
+	// xu:这两个的区别是什么？
+	// 一元RPC(Unary RPCs )：这是最简单的定义，客户端发送一个请求，服务端返回一个结果
+	// 服务器流RPC（Server streaming RPCs）：客户端发送一个请求，服务端返回一个流给客户端，客户从流中读取一系列消息，直到读取所有消息
+	// 客户端流RPC(Client streaming RPCs )：客户端通过流向服务端发送一系列消息，然后等待服务端读取完数据并返回处理结果
+	// 双向流RPC(Bidirectional streaming RPCs)：客户端和服务端都可以独立向对方发送或接受一系列的消息。客户端和服务端读写的顺序是任意。
 	if md, ok := srv.md[method]; ok {
 		s.processUnaryRPC(t, stream, srv, md, trInfo)
 		return
