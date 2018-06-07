@@ -82,6 +82,7 @@ const (
 )
 
 func (h *testStreamHandler) handleStream(t *testing.T, s *Stream) {
+	//fmt.Println("handle stream", s)
 	req := expectedRequest
 	resp := expectedResponse
 	if s.Method() == "foo.Large" {
@@ -93,6 +94,7 @@ func (h *testStreamHandler) handleStream(t *testing.T, s *Stream) {
 	if err != nil {
 		return
 	}
+	//fmt.Println("handel read", p)
 	if !bytes.Equal(p, req) {
 		t.Fatalf("handleStream got %v, want %v", p, req)
 	}
@@ -312,6 +314,7 @@ func TestClientSendAndReceive(t *testing.T) {
 func TestClientErrorNotify(t *testing.T) {
 	server, ct := setUp(t, 0, math.MaxUint32, normal)
 	go server.stop()
+	// server stop后，reader notifyError 触发客户端关闭errorChan
 	// ct.reader should detect the error and activate ct.Error().
 	<-ct.Error()
 	ct.Close()
@@ -324,6 +327,7 @@ func performOneRPC(ct ClientTransport) {
 	}
 	s, err := ct.NewStream(context.Background(), callHdr)
 	if err != nil {
+		fmt.Println("perform",err)
 		return
 	}
 	opts := Options{
@@ -343,6 +347,7 @@ func performOneRPC(ct ClientTransport) {
 	}
 }
 
+//xu: server stop -> ct.close -> NewStream失败
 func TestClientMix(t *testing.T) {
 	s, ct := setUp(t, 0, math.MaxUint32, normal)
 	go func(s *server) {
@@ -359,6 +364,7 @@ func TestClientMix(t *testing.T) {
 	}
 }
 
+//xu: 消息大小如何控制？
 func TestLargeMessage(t *testing.T) {
 	server, ct := setUp(t, 0, math.MaxUint32, normal)
 	callHdr := &CallHdr{
@@ -366,7 +372,7 @@ func TestLargeMessage(t *testing.T) {
 		Method: "foo.Large",
 	}
 	var wg sync.WaitGroup
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 1; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -442,7 +448,7 @@ func TestLargeMessageSuspension(t *testing.T) {
 		Method: "foo.Large",
 	}
 	// Set a long enough timeout for writing a large message out.
-	ctx, _ := context.WithTimeout(context.Background(), time.Second)
+	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 	s, err := ct.NewStream(ctx, callHdr)
 	if err != nil {
 		t.Fatalf("failed to open stream: %v", err)

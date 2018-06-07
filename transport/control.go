@@ -91,6 +91,8 @@ func (*ping) item() {}
 
 // quotaPool is a pool which accumulates the quota and sends it to acquire()
 // when it is available.
+// xu: 用于发送流控。 将当前可用的quota(字节数)写入c，有数据发送需要时，从c中获取。
+// acquire 将quota全部获取出来，根据实际使用量，将未使用的重新add回pool。
 type quotaPool struct {
 	c chan int
 
@@ -142,6 +144,7 @@ func (qb *quotaPool) acquire() <-chan int {
 }
 
 // inFlow deals with inbound flow control
+// xu:用于接收流控。
 type inFlow struct {
 	// The inbound flow control limit for pending data.
 	limit uint32

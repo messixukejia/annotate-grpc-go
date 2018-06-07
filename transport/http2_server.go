@@ -305,6 +305,7 @@ func (t *http2Server) HandleStreams(handle func(*Stream), traceCtx func(context.
 
 	for {
 		frame, err := t.framer.readFrame()
+		//fmt.Println("frame type is ", reflect.TypeOf(frame))
 		if err != nil {
 			if se, ok := err.(http2.StreamError); ok {
 				t.mu.Lock()
@@ -380,6 +381,7 @@ func (t *http2Server) updateWindow(s *Stream, n uint32) {
 	}
 }
 
+// xu: handle data 接收到数据，放到recvBuffer中。
 func (t *http2Server) handleData(f *http2.DataFrame) {
 	size := len(f.Data())
 	if err := t.fc.onData(uint32(size)); err != nil {
@@ -417,6 +419,7 @@ func (t *http2Server) handleData(f *http2.DataFrame) {
 		// Can this copy be eliminated?
 		data := make([]byte, size)
 		copy(data, f.Data())
+		//fmt.Println("recv data", data)
 		s.write(recvMsg{data: data})
 	}
 	if f.Header().Flags.Has(http2.FlagDataEndStream) {

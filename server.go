@@ -767,7 +767,7 @@ func (s *Server) processUnaryRPC(t transport.ServerTransport, stream *transport.
 	}
 }
 
-// xu: 处理流程： 建立serverStream ->
+// xu: 处理流程： 建立serverStream -> sd.Handler -> t.WriteStatus
 func (s *Server) processStreamingRPC(t transport.ServerTransport, stream *transport.Stream, srv *service, sd *StreamDesc, trInfo *traceInfo) (err error) {
 	sh := s.opts.statsHandler
 	if sh != nil {

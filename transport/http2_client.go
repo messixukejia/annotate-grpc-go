@@ -69,7 +69,7 @@ type http2Client struct {
 	// writableChan synchronizes write access to the transport.
 	// A writer acquires the write lock by sending a value on writableChan
 	// and releases it by receiving from writableChan.
-	// 用于控制write串行化
+	// xu: 用于控制write串行化。写入表示释放锁，读取表示获取锁。
 	writableChan chan int
 	// shutdownChan is closed when Close is called.
 	// Blocking operations should select on shutdownChan to avoid
@@ -635,6 +635,7 @@ func (t *http2Client) Write(s *Stream, data []byte, opts *Options) error {
 			size := http2MaxFrameLen
 			// Wait until the stream has some quota to send the data.
 			sq, err := wait(s.ctx, s.done, s.goAway, t.shutdownChan, s.sendQuotaPool.acquire())
+			fmt.Println("sq ", sq, "len ", r.Len())
 			if err != nil {
 				return err
 			}
@@ -750,6 +751,7 @@ func (t *http2Client) updateWindow(s *Stream, n uint32) {
 	}
 }
 
+// xu:数据从这里接收 s.write写入stream， 通过io.read即可
 func (t *http2Client) handleData(f *http2.DataFrame) {
 	size := len(f.Data())
 	if err := t.fc.onData(uint32(size)); err != nil {
