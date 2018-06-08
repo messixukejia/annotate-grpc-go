@@ -104,7 +104,7 @@ type http2Client struct {
 
 	mu            sync.Mutex     // guard the following variables
 	state         transportState // the state of underlying connection
-	activeStreams map[uint32]*Stream
+	activeStreams map[uint32]*Stream  //xu:newstream时创建
 	// The max number of concurrent streams
 	maxStreams int
 	// the per-stream outbound flow control window size set by the peer.

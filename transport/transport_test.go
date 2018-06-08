@@ -364,7 +364,13 @@ func TestClientMix(t *testing.T) {
 	}
 }
 
-//xu: 消息大小如何控制？
+//xu: 能发送超大消息，是因为handleWinowUpdate会将s.sendQuotaPool恢复。
+//流控 (Flow control)
+//HTTP/2 流量控制的目标，在流量窗口初始值的约束下，给予接收端以全权，控制当下想要接受的流量大小。
+//算法：
+//两端(收发)保有一个流量控制窗口(window)初始值。
+//发送端每发送一个DATA帧，就把window递减，递减量为这个帧的大小，要是window小于帧大小，那么这个帧就必须被拆分。如果window等于0，就不能发送任何帧
+//接收端可以发送 WINDOW_UPDATE帧给发送端，发送端以帧内指定的Window Size Increment作为增量，加到window上
 func TestLargeMessage(t *testing.T) {
 	server, ct := setUp(t, 0, math.MaxUint32, normal)
 	callHdr := &CallHdr{
@@ -441,6 +447,7 @@ func TestGracefulClose(t *testing.T) {
 	server.stop()
 }
 
+//xu: 只消耗了quota，消耗完了会阻塞s.sendQuotaPool.acquire
 func TestLargeMessageSuspension(t *testing.T) {
 	server, ct := setUp(t, 0, math.MaxUint32, suspended)
 	callHdr := &CallHdr{
@@ -604,6 +611,9 @@ func TestServerContextCanceledOnClosedConnection(t *testing.T) {
 	server.stop()
 }
 
+//xu:客户端异常操作
+// 1、往一个stream写入大量数据，超过initialWindowSize，触发rsthandleRstStream，io.ReadFull读到ResourceExhausted
+// 2、创建多个stream， http2_server.go handleData只处理onData，但没有业务处理，导致inflow溢出，关闭server。client进而关闭，导致stream创建失败。
 func TestServerWithMisbehavedClient(t *testing.T) {
 	server, ct := setUp(t, 0, math.MaxUint32, suspended)
 	callHdr := &CallHdr{
@@ -704,6 +714,9 @@ func TestServerWithMisbehavedClient(t *testing.T) {
 	server.stop()
 }
 
+
+//xu: 服务端异常操作
+// 大量服务端消息，把httpclient的inflow填满（handleData流程），触发client的notifyError
 func TestClientWithMisbehavedServer(t *testing.T) {
 	server, ct := setUp(t, 0, math.MaxUint32, misbehaved)
 	callHdr := &CallHdr{

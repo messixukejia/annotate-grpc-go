@@ -92,7 +92,7 @@ type http2Server struct {
 
 	mu            sync.Mutex // guard the following
 	state         transportState
-	activeStreams map[uint32]*Stream
+	activeStreams map[uint32]*Stream //operateHeaders时创建
 	// the per-stream outbound flow control window size set by the peer.
 	streamSendQuota uint32
 }
