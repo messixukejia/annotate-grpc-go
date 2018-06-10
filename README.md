@@ -55,3 +55,9 @@ recvResponse()
 
 
 Golang gRPC实践：https://github.com/Jergoo/go-grpc-example
+
+个人源码学习总结：
+1、负载均衡https://segmentfault.com/a/1190000015231956
+2、transport
+2.1流控https://segmentfault.com/a/1190000015232494
+2.2客户端 服务端https://segmentfault.com/a/1190000015237382?_ea=3846950
