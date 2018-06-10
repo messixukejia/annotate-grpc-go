@@ -1,6 +1,4 @@
-#gRPC-Go
-
-源码注解
+## 源码注解
 
 基于34384f34de585705f1a6783a158d2ec8af29f618
 
@@ -19,7 +17,8 @@ git remote add lzy  https://github.com/liangzhiyang/annotate-grpc-go.git
 git fetch --all
 git checkout -b note lzy/note
 ```
-建议阅读顺序(细节不列)
+
+## 建议阅读顺序(细节不列)
 * grpc.Dial() //建立连接的过程
 ```
 (cc *ClientConn) resetAddrConn
@@ -54,10 +53,13 @@ recvResponse()
 
 
 
-Golang gRPC实践：https://github.com/Jergoo/go-grpc-example
+## Golang gRPC实践：https://github.com/Jergoo/go-grpc-example
 
-个人源码学习总结：
+## 个人源码学习总结：
 1、负载均衡https://segmentfault.com/a/1190000015231956
+
 2、transport
+
 2.1流控https://segmentfault.com/a/1190000015232494
+
 2.2客户端 服务端https://segmentfault.com/a/1190000015237382?_ea=3846950
